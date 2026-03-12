@@ -1,21 +1,21 @@
 -- rfl_theorems.lean
 -- Demonstrating proofs using `rfl` in Lean 4
 
--- 1️⃣ Addition
+-- 1️ Addition
 theorem add_example : 2 + 3 = 5 :=
   rfl  -- reflexivity works because 2 + 3 simplifies to 5
 
--- 2️⃣ Subtraction
+-- 2️ Subtraction
 theorem sub_example : 15 - 8 = 7 :=
   rfl  -- reflexivity works because 15 - 8 simplifies to 7
 
--- 3️⃣ String append
+-- 3️ String append
 theorem string_example : "Hello, ".append "world" = "Hello, world" :=
   rfl  -- Lean can compute string literals, so rfl works
 
--- 4️⃣ Inequality
+-- 4️ Inequality
 -- theorem lt_example : 5 < 18 :=
---   rfl  -- ❌ This will NOT work
+--   rfl  --  This will NOT work
 
 /-
 Why rfl fails for 5 < 18:
