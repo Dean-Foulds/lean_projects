@@ -1,3 +1,4 @@
+import Mathlib
 -- decide_theorems.lean
 -- Using `by decide` to prove equalities and inequalities
 

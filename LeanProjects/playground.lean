@@ -1,3 +1,4 @@
+import Mathlib
 -- repl_playground_fixed.lean
 -- Lean 4 REPL-like sandbox (menu-driven, fully simulated)
 
