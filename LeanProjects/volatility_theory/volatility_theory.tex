@@ -1,0 +1,360 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    urlcolor=blue!70!black
+}
+
+\lstset{
+    language=,
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{gray!10},
+    frame=single,
+    rulecolor=\color{gray!40},
+    breaklines=true,
+    keywordstyle=\color{blue!70!black}\bfseries,
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!70!black},
+}
+
+\theoremstyle{definition}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{remark}[theorem]{Remark}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Dean Foulds}
+\lhead{Aircraft Parts Volatility — Formal Proofs}
+\cfoot{\thepage}
+
+\title{
+    \vspace{-1cm}
+    {\Large\bfseries Formal Mathematical Proofs for the}\\[0.4em]
+    {\LARGE\bfseries Aircraft Parts Volatility Index (APVI)}\\[0.6em]
+    {\large A Lean 4 \& Mathlib Verification}
+}
+\author{
+    Dean Foulds\\
+    \small Data Scientist \& ML Engineer\\
+    \small \href{https://deanfoulds.xyz}{deanfoulds.xyz} \quad
+    \href{https://github.com/Dean-Foulds/lean_projects}{github.com/Dean-Foulds/lean\_projects}
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% ---------------------------------------------------------------
+\section{Introduction}
+% ---------------------------------------------------------------
+
+This document presents formal mathematical proofs underpinning the
+\textbf{Aircraft Parts Volatility Index (APVI)}, a composite risk metric
+that combines equity market volatility (via the XAR ETF) with Producer Price
+Index (PPI) volatility for the aerospace parts sector.
+
+The proofs are machine-verified using \textbf{Lean 4} and the
+\textbf{Mathlib4} library — one of the largest formal mathematics libraries
+in existence. Lean verification guarantees that each theorem holds under
+the stated hypotheses with no logical gaps.
+
+The APVI is defined as:
+\[
+    \text{APVI} = \frac{\sigma_{\text{equity}} + \sigma_{\text{PPI}}}{2}
+\]
+
+where $\sigma_{\text{equity}}$ is the 90-day realised volatility of the XAR
+aerospace ETF and $\sigma_{\text{PPI}}$ is the rolling 12-month standard
+deviation of log PPI returns for aircraft parts (FRED series
+\texttt{PCU336413336413P}).
+
+% ---------------------------------------------------------------
+\section{Definitions}
+% ---------------------------------------------------------------
+
+\begin{definition}[Volatility Spike]
+Let $v, \mu, \sigma, k \in \mathbb{R}$ with $\sigma > 0$. A value $v$ is
+said to constitute a \emph{volatility spike} at threshold $k$ if:
+\[
+    v > \mu + k\sigma
+\]
+In Lean 4 this is encoded as:
+\begin{lstlisting}
+def is_spike (v μ σ k : ℝ) : Prop := v > μ + k * σ
+\end{lstlisting}
+This definition captures the standard statistical notion of an outlier:
+a value exceeding the mean by more than $k$ standard deviations. In the
+context of global supply chain disruption events (e.g.\ the Suez Canal
+blockage of 2021 or the COVID-19 pandemic of 2020), $v$ represents
+observed volatility and $\mu, \sigma$ are computed over a historical
+baseline window.
+\end{definition}
+
+\begin{definition}[Realised Volatility]
+For a sample of $n$ log returns $r_1, \ldots, r_n$, the annualised
+realised volatility is:
+\[
+    \sigma_{\text{realised}} = \sqrt{\frac{1}{n}\sum_{i=1}^{n} r_i^2}
+    \times \sqrt{252}
+\]
+In the APVI model, a 90-day rolling window is used ($n = 90$).
+\end{definition}
+
+\begin{definition}[Composite APVI]
+Given equity volatility $\sigma_e \geq 0$ and PPI volatility
+$\sigma_p \geq 0$, the composite index is:
+\[
+    \text{APVI} = \frac{\sigma_e + \sigma_p}{2}
+\]
+\end{definition}
+
+% ---------------------------------------------------------------
+\section{Theorems and Proofs}
+% ---------------------------------------------------------------
+
+\subsection{Spike Detection is Monotone in the Threshold}
+
+\begin{theorem}[Monotonicity of Spike Detection]
+\label{thm:spike_monotone}
+Let $v, \mu, \sigma \in \mathbb{R}$ with $\sigma > 0$, and let
+$k_1 < k_2$. If $v$ is a spike at threshold $k_2$, then $v$ is also
+a spike at the lower threshold $k_1$:
+\[
+    k_1 < k_2 \;\wedge\; v > \mu + k_2\sigma
+    \;\Longrightarrow\; v > \mu + k_1\sigma
+\]
+\end{theorem}
+
+\begin{proof}
+Since $\sigma > 0$ and $k_1 < k_2$, we have $k_1\sigma < k_2\sigma$,
+hence $\mu + k_1\sigma < \mu + k_2\sigma < v$. \qed
+\end{proof}
+
+\begin{remark}
+This theorem formalises the intuitive property that a stricter threshold
+($k_2 > k_1$) is harder to trigger. For the APVI model, this means that
+a spike flagged at the 99th percentile ($k \approx 2.33$) is automatically
+flagged at the 95th percentile ($k \approx 1.65$) as well. Lean proof:
+\begin{lstlisting}
+theorem spike_monotone_k (v μ σ k₁ k₂ : ℝ)
+    (hσ : 0 < σ) (hk : k₁ < k₂)
+    (h : is_spike v μ σ k₂) : is_spike v μ σ k₁ := by
+  unfold is_spike at *
+  linarith [mul_lt_mul_of_pos_right hk hσ]
+\end{lstlisting}
+\end{remark}
+
+\subsection{Non-Negativity of Realised Volatility}
+
+\begin{theorem}[Realised Volatility is Non-Negative]
+\label{thm:vol_nonneg}
+For any sequence of returns $r : \{0,\ldots,n-1\} \to \mathbb{R}$:
+\[
+    \sqrt{\sum_{i=0}^{n-1} \frac{r_i^2}{n}} \;\geq\; 0
+\]
+\end{theorem}
+
+\begin{proof}
+The expression under the square root is a sum of non-negative terms
+divided by a positive integer, hence non-negative. The square root of
+a non-negative real is non-negative by definition. \qed
+\end{proof}
+
+\begin{remark}
+This is a fundamental sanity property of any volatility measure.
+Lean proof:
+\begin{lstlisting}
+theorem realized_vol_nonneg (n : ℕ) (returns : Fin n → ℝ) :
+    0 ≤ Real.sqrt (∑ i, (returns i) ^ 2 / n) := Real.sqrt_nonneg _
+\end{lstlisting}
+\end{remark}
+
+\subsection{Non-Negativity of the APVI}
+
+\begin{theorem}[APVI is Non-Negative]
+\label{thm:apvi_nonneg}
+If $\sigma_e \geq 0$ and $\sigma_p \geq 0$, then:
+\[
+    \frac{\sigma_e + \sigma_p}{2} \;\geq\; 0
+\]
+\end{theorem}
+
+\begin{proof}
+Follows immediately from the non-negativity of addition and division
+by a positive constant. \qed
+\end{proof}
+
+\begin{remark}
+Lean proof:
+\begin{lstlisting}
+theorem apvi_nonneg (equity_vol ppi_vol : ℝ)
+    (h1 : 0 ≤ equity_vol) (h2 : 0 ≤ ppi_vol) :
+    0 ≤ (equity_vol + ppi_vol) / 2 := by linarith
+\end{lstlisting}
+\end{remark}
+
+\subsection{APVI is Bounded by its Components}
+
+\begin{theorem}[APVI Upper Bound]
+\label{thm:apvi_bound}
+For any $\sigma_e, \sigma_p \in \mathbb{R}$:
+\[
+    \frac{\sigma_e + \sigma_p}{2} \;\leq\; \max(\sigma_e, \sigma_p)
+\]
+\end{theorem}
+
+\begin{proof}
+Without loss of generality, assume $\sigma_e \geq \sigma_p$, so
+$\max(\sigma_e, \sigma_p) = \sigma_e$. Then:
+\[
+    \frac{\sigma_e + \sigma_p}{2} \leq \frac{\sigma_e + \sigma_e}{2} = \sigma_e
+\]
+The case $\sigma_p > \sigma_e$ is symmetric. \qed
+\end{proof}
+
+\begin{remark}
+This theorem guarantees that the composite APVI can never exceed its
+most extreme component — an important property for risk interpretation.
+A spike in one measure is smoothed by averaging, so both components
+must be elevated for the APVI to reach extreme levels. Lean proof:
+\begin{lstlisting}
+theorem apvi_le_max (equity_vol ppi_vol : ℝ) :
+    (equity_vol + ppi_vol) / 2 ≤ max equity_vol ppi_vol := by
+  simp [max_def]
+  split_ifs with h
+  · linarith
+  · linarith
+\end{lstlisting}
+\end{remark}
+
+\subsection{Composite Spike Detection}
+
+\begin{theorem}[Bilateral Spike Implies APVI Spike]
+\label{thm:apvi_spike}
+Let $\sigma_e, \sigma_p, \mu_e, \mu_p, s_e, s_p, k \in \mathbb{R}$.
+If both the equity volatility and PPI volatility are spikes at
+threshold $k$:
+\[
+    \sigma_e > \mu_e + k s_e \;\wedge\; \sigma_p > \mu_p + k s_p
+\]
+then the composite APVI also spikes above its composite baseline:
+\[
+    \frac{\sigma_e + \sigma_p}{2} > \frac{\mu_e + \mu_p}{2}
+    + k\cdot\frac{s_e + s_p}{2}
+\]
+\end{theorem}
+
+\begin{proof}
+Adding the two spike inequalities:
+\[
+    \sigma_e + \sigma_p > (\mu_e + k s_e) + (\mu_p + k s_p)
+    = (\mu_e + \mu_p) + k(s_e + s_p)
+\]
+Dividing both sides by 2 gives the result. \qed
+\end{proof}
+
+\begin{remark}
+This is the key theorem linking individual market signals to the
+composite index. It formally proves that simultaneous stress in both
+the equity market (XAR blue line spike) and the supply chain (PPI red
+line spike) — as observed during COVID-19 in Q1 2020 and the Suez Canal
+blockage in Q1 2021 — necessarily produces a composite APVI spike.
+Lean proof:
+\begin{lstlisting}
+theorem apvi_spike (eq_vol ppi_vol μ_eq μ_ppi σ_eq σ_ppi k : ℝ)
+    (h1 : is_spike eq_vol μ_eq σ_eq k)
+    (h2 : is_spike ppi_vol μ_ppi σ_ppi k) :
+    (eq_vol + ppi_vol) / 2 > (μ_eq + μ_ppi) / 2 + k * (σ_eq + σ_ppi) / 2 := by
+  unfold is_spike at *
+  linarith
+\end{lstlisting}
+\end{remark}
+
+\subsection{Rolling Mean Bounded by Maximum}
+
+\begin{theorem}[Rolling Mean Bounded by Window Maximum]
+\label{thm:mean_bound}
+For a finite sequence $v : \{0,\ldots,n\} \to \mathbb{R}$ and an upper
+bound $M$ such that $v_i \leq M$ for all $i$:
+\[
+    \frac{1}{n+1}\sum_{i=0}^{n} v_i \;\leq\; M
+\]
+\end{theorem}
+
+\begin{proof}
+\[
+    \sum_{i=0}^{n} v_i \;\leq\; \sum_{i=0}^{n} M \;=\; (n+1)\cdot M
+\]
+Dividing both sides by $n+1 > 0$ gives the result. \qed
+\end{proof}
+
+\begin{remark}
+This theorem formalises why a larger rolling window smooths volatility
+estimates — the window mean can never exceed the largest value in the
+window. For the 90-day window used in APVI, this ensures that a single
+extreme day cannot drive the rolling estimate above its own value.
+\end{remark}
+
+% ---------------------------------------------------------------
+\section{Empirical Interpretation}
+% ---------------------------------------------------------------
+
+The following table summarises the correspondence between the formal
+theorems and observed market events:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Event} & \textbf{Observed Effect} & \textbf{Relevant Theorem} \\
+\midrule
+COVID-19 (Mar 2020)        & XAR spike + PPI spike    & Theorem~\ref{thm:apvi_spike} \\
+Suez Canal blockage (2021) & XAR spike                & Theorem~\ref{thm:spike_monotone} \\
+Ukraine conflict (2022)    & PPI spike                & Theorem~\ref{thm:apvi_bound} \\
+General baseline           & APVI $\geq 0$            & Theorem~\ref{thm:apvi_nonneg} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ---------------------------------------------------------------
+\section{Conclusion}
+% ---------------------------------------------------------------
+
+These six formally verified theorems establish the mathematical
+foundations of the APVI model:
+
+\begin{enumerate}
+    \item Spike detection is monotone — stricter thresholds are harder to trigger.
+    \item Realised volatility is always non-negative.
+    \item The composite APVI is always non-negative.
+    \item The APVI is bounded above by its most extreme component.
+    \item Bilateral spikes in both equity and PPI necessarily produce a composite spike.
+    \item Rolling window means are bounded by the window maximum.
+\end{enumerate}
+
+These properties together guarantee that the APVI is a well-defined,
+interpretable, and mathematically sound risk metric. The full Lean 4
+source code is available at:
+\begin{center}
+\url{https://github.com/Dean-Foulds/lean_projects}
+\end{center}
+
+\end{document}
