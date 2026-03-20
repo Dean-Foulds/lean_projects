@@ -1,4 +1,5 @@
 import Mathlib
+import Mathlib
 -- fifth_lookup_fixed.lean
 -- Safe fifth-element lookup with proof (Lean 4.28+)
 
